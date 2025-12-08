@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_mysqldb import MySQL
+from MySQLdb import IntegrityError
+
 
 app = Flask(__name__)
 
@@ -90,16 +92,23 @@ def update_champion(champion_id):
 @app.route('/champions/<int:champion_id>', methods=['DELETE'])
 def delete_champion(champion_id):
     cursor = mysql.connection.cursor()
+    
+    
     cursor.execute("SELECT * FROM champions WHERE championid=%s", (champion_id,))
     existing = dict_fetchone(cursor)
     if not existing:
         cursor.close()
         return jsonify({"error": "Champion not found"}), 404
 
-    cursor.execute("DELETE FROM champions WHERE championid=%s", (champion_id,))
-    mysql.connection.commit()
-    cursor.close()
-    return jsonify({"message": "Champion deleted successfully"}), 200
+    try:
+        cursor.execute("DELETE FROM champions WHERE championid=%s", (champion_id,))
+        mysql.connection.commit()
+        cursor.close()
+        return jsonify({"message": "Champion deleted successfully"}), 200
+    except IntegrityError:
+        cursor.close()
+        return jsonify({"error": "Cannot delete champion: still referenced in other tables"}), 400
+
 
 if __name__ == '__main__':
     app.run(debug=True)
