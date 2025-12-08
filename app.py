@@ -3,7 +3,7 @@ from flask_mysqldb import MySQL
 
 app = Flask(__name__)
 
-# MySQL configuration
+
 app.config['MYSQL_HOST'] = 'localhost'
 app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'root'
@@ -11,7 +11,7 @@ app.config['MYSQL_DB'] = 'game'
 
 mysql = MySQL(app)
 
-# Helper to convert MySQL rows to dict
+
 def dict_fetchall(cursor):
     columns = [col[0] for col in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -23,7 +23,7 @@ def dict_fetchone(cursor):
         return dict(zip(columns, row))
     return None
 
-# ====== READ ALL ======
+
 @app.route('/champions', methods=['GET'])
 def get_champions():
     cursor = mysql.connection.cursor()
@@ -32,7 +32,7 @@ def get_champions():
     cursor.close()
     return jsonify({"champions": champions}), 200
 
-# ====== READ ONE ======
+# READ
 @app.route('/champions/<int:champion_id>', methods=['GET'])
 def get_champion(champion_id):
     cursor = mysql.connection.cursor()
@@ -43,7 +43,7 @@ def get_champion(champion_id):
         return jsonify(champion), 200
     return jsonify({"error": "Champion not found"}), 404
 
-# ====== CREATE ======
+# CREATE 
 @app.route('/champions', methods=['POST'])
 def add_champion():
     data = request.get_json()
@@ -63,7 +63,7 @@ def add_champion():
     cursor.close()
     return jsonify({"message": "Champion added successfully"}), 201
 
-# ====== UPDATE ======
+# UPDATE 
 @app.route('/champions/<int:champion_id>', methods=['PUT'])
 def update_champion(champion_id):
     data = request.get_json()
@@ -86,7 +86,7 @@ def update_champion(champion_id):
     cursor.close()
     return jsonify({"message": "Champion updated successfully"}), 200
 
-# ====== DELETE ======
+# DELETE
 @app.route('/champions/<int:champion_id>', methods=['DELETE'])
 def delete_champion(champion_id):
     cursor = mysql.connection.cursor()
