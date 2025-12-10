@@ -139,6 +139,44 @@ def delete_champion(champion_id):
             400
         )
 
+# SEARCH 
+@app.route('/champions/search', methods=['GET'])
+def search_champions():
+    # Get query parameters
+    name = request.args.get('name')
+    roleid = request.args.get('roleid')
+    difficulty = request.args.get('difficulty_level')
+    output_format = request.args.get('format', 'json').lower()
+
+    # Build dynamic query
+    query = "SELECT * FROM champions WHERE 1=1"
+    params = []
+
+    if name:
+        query += " AND champion_name LIKE %s"
+        params.append(f"%{name}%")
+    if roleid:
+        query += " AND roleid=%s"
+        params.append(roleid)
+    if difficulty:
+        query += " AND difficulty_level=%s"
+        params.append(difficulty)
+
+    cursor = mysql.connection.cursor()
+    cursor.execute(query, params)
+    champions = dict_fetchall(cursor)
+    cursor.close()
+
+    # Return XML if requested
+    if output_format == 'xml':
+        from dicttoxml import dicttoxml
+        from flask import Response
+        xml_data = dicttoxml(champions, custom_root='champions', attr_type=False)
+        return Response(xml_data, mimetype='application/xml')
+
+    # Default JSON output
+    return jsonify({"champions": champions}), 200
+
 #  RUN 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -47,15 +47,34 @@ class ChampionAPITestCase(unittest.TestCase):
 
     # Test DELETE 
     def test_delete_champion(self):
-        champion_id = 1  # Change to an ID that exists in your DB
+        champion_id = 1  
         response = self.app.delete(f'/champions/{champion_id}')
         
-        # Check for expected status codes: 200 (deleted), 404 (not found), 400 (cannot delete due to FK)
+        
         self.assertIn(response.status_code, [200, 404, 400])
         
         if response.status_code == 400:
             data = json.loads(response.data)
             self.assertIn("cannot delete", data["error"].lower())
+
+    # Test SEARCH JSON
+    def test_search_champions(self):
+        response = self.app.get('/champions/search?name=Teemo')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('champions', data)
+
+        response = self.app.get('/champions/search?roleid=2')
+        self.assertEqual(response.status_code, 200)
+
+        response = self.app.get('/champions/search?difficulty_level=easy')
+        self.assertEqual(response.status_code, 200)
+
+    # Test SEARCH XML
+    def test_search_champions_xml(self):
+        response = self.app.get('/champions/search?name=Teemo&format=xml')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'<response>', response.data)  # XML root node is <response>
 
 if __name__ == '__main__':
     unittest.main()
