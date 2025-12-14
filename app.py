@@ -1,9 +1,13 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, make_response, Response
 from flask_mysqldb import MySQL
 from MySQLdb import IntegrityError
+from flask_jwt_extended import (
+    JWTManager, create_access_token, jwt_required
+)
 import dicttoxml
 
 app = Flask(__name__)
+
 
 # DB CONFIG
 app.config['MYSQL_HOST'] = 'localhost'
@@ -11,10 +15,14 @@ app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'root'
 app.config['MYSQL_DB'] = 'game'
 
+# JWT CONFIG
+app.config['JWT_SECRET_KEY'] = 'super-secret-key'
+
 mysql = MySQL(app)
+jwt = JWTManager(app)
 
-#  HELPER FUNCTIONS 
 
+# HELPER FUNCTIONS
 def dict_fetchall(cursor):
     columns = [col[0] for col in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
@@ -27,22 +35,37 @@ def dict_fetchone(cursor):
     return None
 
 def format_response(data, status=200):
-    """
-    Converts response to JSON or XML based on ?format=
-    Default: JSON
-    """
     output_format = request.args.get('format', 'json').lower()
 
     if output_format == "xml":
-        xml_data = dicttoxml.dicttoxml(data, custom_root='response', attr_type=False)
-        response = make_response(xml_data, status)
-        response.headers['Content-Type'] = 'application/xml'
-        return response
+        xml_data = dicttoxml.dicttoxml(
+            data, custom_root='response', attr_type=False
+        )
+        return Response(xml_data, status=status, mimetype='application/xml')
 
-    # JSON response
     return make_response(jsonify(data), status)
 
-# ROUTES 
+# AUTH (JWT)
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "Missing JSON body"}), 400
+
+    username = data.get('username')
+    password = data.get('password')
+
+    
+    if username == 'admin' and password == 'admin123':
+        token = create_access_token(identity=username)
+        return jsonify(access_token=token), 200
+
+    return jsonify({"error": "Invalid credentials"}), 401
+
+
+# ROUTES
+
 
 # READ ALL
 @app.route('/champions', methods=['GET'])
@@ -53,12 +76,13 @@ def get_champions():
     cursor.close()
     return format_response({"champions": champions})
 
-
 # READ ONE
 @app.route('/champions/<int:champion_id>', methods=['GET'])
 def get_champion(champion_id):
     cursor = mysql.connection.cursor()
-    cursor.execute("SELECT * FROM champions WHERE championid=%s", (champion_id,))
+    cursor.execute(
+        "SELECT * FROM champions WHERE championid=%s", (champion_id,)
+    )
     champion = dict_fetchone(cursor)
     cursor.close()
 
@@ -67,11 +91,15 @@ def get_champion(champion_id):
 
     return format_response({"error": "Champion not found"}, 404)
 
-
-# CREATE
+# CREATE (PROTECTED)
 @app.route('/champions', methods=['POST'])
+@jwt_required()
 def add_champion():
     data = request.get_json()
+
+    if not data:
+        return format_response({"error": "Missing JSON body"}, 400)
+
     name = data.get('champion_name')
     roleid = data.get('roleid')
     difficulty = data.get('difficulty_level')
@@ -81,7 +109,8 @@ def add_champion():
 
     cursor = mysql.connection.cursor()
     cursor.execute(
-        "INSERT INTO champions (champion_name, roleid, difficulty_level) VALUES (%s, %s, %s)",
+        "INSERT INTO champions (champion_name, roleid, difficulty_level) "
+        "VALUES (%s, %s, %s)",
         (name, roleid, difficulty)
     )
     mysql.connection.commit()
@@ -89,17 +118,23 @@ def add_champion():
 
     return format_response({"message": "Champion added successfully"}, 201)
 
-
-# UPDATE
+# UPDATE (PROTECTED)
 @app.route('/champions/<int:champion_id>', methods=['PUT'])
+@jwt_required()
 def update_champion(champion_id):
     data = request.get_json()
+
+    if not data:
+        return format_response({"error": "Missing JSON body"}, 400)
+
     name = data.get('champion_name')
     roleid = data.get('roleid')
     difficulty = data.get('difficulty_level')
 
     cursor = mysql.connection.cursor()
-    cursor.execute("SELECT * FROM champions WHERE championid=%s", (champion_id,))
+    cursor.execute(
+        "SELECT * FROM champions WHERE championid=%s", (champion_id,)
+    )
     existing = dict_fetchone(cursor)
 
     if not existing:
@@ -107,7 +142,8 @@ def update_champion(champion_id):
         return format_response({"error": "Champion not found"}, 404)
 
     cursor.execute(
-        "UPDATE champions SET champion_name=%s, roleid=%s, difficulty_level=%s WHERE championid=%s",
+        "UPDATE champions SET champion_name=%s, roleid=%s, "
+        "difficulty_level=%s WHERE championid=%s",
         (name, roleid, difficulty, champion_id)
     )
     mysql.connection.commit()
@@ -115,12 +151,14 @@ def update_champion(champion_id):
 
     return format_response({"message": "Champion updated successfully"})
 
-
-# DELETE
+# DELETE (PROTECTED)
 @app.route('/champions/<int:champion_id>', methods=['DELETE'])
+@jwt_required()
 def delete_champion(champion_id):
     cursor = mysql.connection.cursor()
-    cursor.execute("SELECT * FROM champions WHERE championid=%s", (champion_id,))
+    cursor.execute(
+        "SELECT * FROM champions WHERE championid=%s", (champion_id,)
+    )
     existing = dict_fetchone(cursor)
 
     if not existing:
@@ -128,7 +166,9 @@ def delete_champion(champion_id):
         return format_response({"error": "Champion not found"}, 404)
 
     try:
-        cursor.execute("DELETE FROM champions WHERE championid=%s", (champion_id,))
+        cursor.execute(
+            "DELETE FROM champions WHERE championid=%s", (champion_id,)
+        )
         mysql.connection.commit()
         cursor.close()
         return format_response({"message": "Champion deleted successfully"})
@@ -139,16 +179,13 @@ def delete_champion(champion_id):
             400
         )
 
-# SEARCH 
+# SEARCH
 @app.route('/champions/search', methods=['GET'])
 def search_champions():
-    # Get query parameters
     name = request.args.get('name')
     roleid = request.args.get('roleid')
     difficulty = request.args.get('difficulty_level')
-    output_format = request.args.get('format', 'json').lower()
 
-    # Build dynamic query
     query = "SELECT * FROM champions WHERE 1=1"
     params = []
 
@@ -167,16 +204,9 @@ def search_champions():
     champions = dict_fetchall(cursor)
     cursor.close()
 
-    # Return XML if requested
-    if output_format == 'xml':
-        from dicttoxml import dicttoxml
-        from flask import Response
-        xml_data = dicttoxml(champions, custom_root='champions', attr_type=False)
-        return Response(xml_data, mimetype='application/xml')
+    return format_response({"champions": champions})
 
-    # Default JSON output
-    return jsonify({"champions": champions}), 200
 
-#  RUN 
+# RUN
 if __name__ == '__main__':
     app.run(debug=True)
